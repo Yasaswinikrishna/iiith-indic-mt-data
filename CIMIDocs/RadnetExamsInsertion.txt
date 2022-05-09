@@ -1,0 +1,582 @@
+DECLARE @Exams                     NVARCHAR(100),
+        @InvoiceHeaderNumber       INT,
+        @InvoiceSendHistoryNumber  INT,
+        @Id                        INT,
+        @LocationId                INT,
+        @Database                  VARCHAR(20),
+        @AttachmentId              INT,
+        @BatchId                   UNIQUEIDENTIFIER,
+        @PatientID                 NVARCHAR(255),
+        @PatientLastName           NVARCHAR(255),
+        @PatientFirstName          NVARCHAR(255),
+        @PatientDateofBirth        DATETIME,
+        @PatientAddress1           NVARCHAR(255),
+        @PatientAddress2           NVARCHAR(255),
+        @PatientCity               NVARCHAR(255),
+        @PatientState              NVARCHAR(255),
+        @PatientZip                NVARCHAR(255),
+        @PatientPhone              NVARCHAR(255),
+        @PatientDateofInjury       DATETIME,
+        @PatientGender             NVARCHAR(255),
+        @PatientEmail              NVARCHAR(255),
+        @LawFirmName               NVARCHAR(255),
+        @LawFirmPhone              NVARCHAR(255),
+        @LawFirmFax                NVARCHAR(255),
+        @LawFirmAddress1           NVARCHAR(255),
+        @LawFirmAddress2           NVARCHAR(255),
+        @LawFirmCity               NVARCHAR(255),
+        @LawFirmState              NVARCHAR(255),
+        @LawFirmZip                NVARCHAR(255),
+        @AttorneyFirstName         NVARCHAR(255),
+        @AttorneyLastName          NVARCHAR(255),
+        @ExamNumber                NVARCHAR(255),
+        @Procedure                 NVARCHAR(255),
+        @CPTCode                   NVARCHAR(255),
+        @CPTDescription            NVARCHAR(255),
+        @DateofService             DATETIME,
+        @ReferralDate              DATETIME,
+        @ReferringDrFirstName      NVARCHAR(255),
+        @ReferringDrLastName       NVARCHAR(255),
+        @RefDrAddress1             NVARCHAR(255),
+        @RefDrAddress2             NVARCHAR(255),
+        @RefDrCity                 NVARCHAR(255),
+        @RefDrState                NVARCHAR(255),
+        @RefDrZip                  NVARCHAR(255),
+        @RefDrPhone                NVARCHAR(255),
+        @RefDrFax                  NVARCHAR(255),
+        @RefDrEmail                NVARCHAR(255),
+        @Classification            VARCHAR(255),
+        @GrossCharge               NVARCHAR(255),
+        @ICD10                     NVARCHAR(255),
+        @ProcessStatus             INT,
+        @CreatedBy                 UNIQUEIDENTIFIER,
+        @CreatedTimestamp          DATETIME,
+        @ExceptionInfo             NVARCHAR(max),
+        @VendorLocationIdLMS       UNIQUEIDENTIFIER,
+        @AttachmentType            INT,
+        @AttachmentPath            VARCHAR(300),
+        @AttachmentNote            VARCHAR(200),
+        @FinalCopy                 BIT = 1,
+        @AddendumNumber            INT = 0,
+        @BillingTotal              DECIMAL(18, 2) = 0.00,
+        @ImageFileName             VARCHAR(200) = NULL,
+        @ImageFileCreationDateTime SMALLDATETIME = NULL,
+        @WebIntakeType             VARCHAR(3) = '',
+        @ExistingAttachmentId      INT = 0,
+        @PILienType                SMALLINT = NULL,
+        @PILienSign                SMALLINT = NULL,
+        @ExamName                  NVARCHAR(255),
+        @ExamOrder                 INT,
+        @VendorName                NVARCHAR(255)
+DECLARE ee CURSOR read_only FOR
+  SELECT id,
+         locationid,
+         [database],
+         locationname,
+         patientaccountnumber,
+         patientlastname,
+         patientfirstname,
+         patientdob,
+         patientaddress,
+         patientaddress2,
+         patientcity,
+         patientstate,
+         patientzip,
+         patientphonenumber,
+         accidentdate,
+         patientgender,
+         primaryinsurancename,
+         primaryinsurancephonenumber,
+         primaryinsuranceaddress,
+         primaryinsuranceaddress2,
+         primaryinsurancecity,
+         primaryinsurancestate,
+         primaryinsurancezip,
+         secondaryinsurancename,
+         secondarycarriername,
+         examnumber,
+         modality,
+         cptcode,
+         cptdescription,
+         servicedate,
+         referraldate,
+         referringdoctor,
+         referringdoctoraddress,
+         referringdoctoraddress2,
+         referringdoctorcity,
+         referringdoctorcity,
+         referringdoctorzip,
+         referringdoctorphonenumber,
+         referringdoctorfaxnumber,
+         classification,
+         chargeamount,
+         icd10code1,
+         attachmenttype,
+         attachmentpath,
+         chargeamount,
+         pilientype,
+         piliensign,
+         examorder,
+		 RIGHT(AttachmentPath, CHARINDEX('\', REVERSE(AttachmentPath)) -1) as ImageFileName
+  FROM   radnetdata
+  WHERE  processstatus = 0 and [filename] = ?
+  ORDER  BY examnumber,
+            examorder DESC
+
+OPEN ee
+
+FETCH next FROM ee INTO @Id, @LocationId, @Database, @VendorName, @PatientID,
+@PatientLastName, @PatientFirstName, @PatientDateofBirth, @PatientAddress1,
+@PatientAddress2, @PatientCity, @PatientState, @PatientZip, @PatientPhone,
+@PatientDateofInjury, @PatientGender, @LawFirmName, @LawFirmPhone,
+@LawFirmAddress1, @LawFirmAddress2, @LawFirmCity, @LawFirmState, @LawFirmZip,
+@AttorneyFirstName, @AttorneyLastName, @ExamNumber, @Procedure, @CPTCode,
+@CPTDescription, @DateofService, @ReferralDate, @ReferringDrFirstName,
+@RefDrAddress1, @RefDrAddress2, @RefDrCity, @RefDrState, @RefDrZip, @RefDrPhone,
+@RefDrFax, @Classification, @GrossCharge, @ICD10, @AttachmentType,
+@AttachmentPath, @BillingTotal, @PILienType, @PILienSign, @ExamOrder,@ImageFileName
+
+--declarations for process
+DECLARE @KHMPatientID    INT,
+        @PayerID         INT,
+        @PayerLocationID INT,
+        @AttyId          INT,
+        @CPTID           NVARCHAR(400),
+        @ExamId          INT,
+        @ProcedureType   VARCHAR(200),
+        @StudyCodeID     INT,
+        @IntakeTypeId    INT,
+        @FCID            INT,
+        @VLID            INT
+
+SET @IntakeTypeId = 19 --IT
+SET @FCID = 3 -- financial class PI
+
+DECLARE @AgreementType NVARCHAR(40)
+
+SET @AgreementType=(SELECT agreementtype
+                    FROM   agreementtypes
+                    WHERE  tempid = '3'
+                           AND entity IS NOT NULL)
+
+WHILE @@fetch_status = 0
+  BEGIN
+      --reset variables
+      SET @KHMPatientID = NULL
+      SET @PayerID = NULL
+      SET @PayerLocationID = NULL
+      SET @CPTID = NULL
+      SET @ExamId = NULL
+      SET @StudyCodeID = NULL
+      SET @ProcedureType = NULL
+      SET @LawFirmFax ='8185755302'
+
+      DECLARE @ptId INT
+
+      SET @ptId=NULL
+
+      DECLARE @tmpModidText VARCHAR(20)
+
+      SELECT @VLID = vendorlocationid
+      FROM   radnetlocations
+      WHERE  locationname = @VendorName
+             AND locationid = @LocationId
+             AND practicedatasource = @Database
+
+      IF( (SELECT Count(1)
+           FROM   proceduretypes
+           WHERE  modality = @Procedure) = 0 )
+        SELECT @Procedure = (SELECT TOP(1) mappingmodality
+                             FROM   [dbo].[radnetmodalitymapping]
+                             WHERE  modality = @Procedure)
+
+      --print @Procedure;
+      SELECT @ProcedureType = (SELECT proceduretype
+                               FROM   proceduretypes
+                               WHERE  modality = @Procedure)
+
+      SELECT TOP 1 @KHMPatientID = id
+      FROM   debtors
+      WHERE  debtors.firstname = @PatientFirstName
+             AND debtors.lastname = @PatientLastName
+             AND debtors.dob = @PatientDateofBirth
+             AND debtors.address = @PatientAddress1
+             AND debtors.city = @PatientCity
+             AND Isnull(debtors.zip, '') = Isnull(@PatientZip, '')
+
+      SET @ptId =@KHMPatientID
+
+      IF ( @KHMPatientID IS NULL )
+        BEGIN
+            --not found
+            --create a new patient
+            SET ansi_warnings OFF
+
+            INSERT INTO debtors
+                        (firstname,
+                         lastname,
+                         [dob],
+                         sex,
+                         [address],
+                         [address2],
+                         [city],
+                         [state],
+                         [zip],
+                         home,
+                         [createdby],
+                         datecreated)
+            VALUES      ( @PatientFirstName,
+                          @PatientLastName,
+                          @PatientDateofBirth,
+                          @PatientGender,
+                          @PatientAddress1,
+                          @PatientAddress2,
+                          @PatientCity,
+                          @PatientState,
+                          @PatientZip,
+                          @PatientPhone,
+                          'Admin',
+                          Getdate() )
+
+            SET ansi_warnings ON
+            SET @KHMPatientID=Scope_identity()
+        END
+
+      SELECT @PayerLocationID = id
+      FROM   firms
+      WHERE  firms.firmname = Ltrim(Rtrim(@LawFirmName))
+
+      IF ( @PayerLocationID IS NULL )
+        BEGIN
+            SET ansi_warnings OFF
+
+            INSERT INTO firms
+                        (firmname,
+                         address,
+                         address2,
+                         city,
+                         state,
+                         zip,
+                         office,
+                         fax,
+                         createdby,
+                         datecreated)
+            VALUES      ( @LawFirmName,
+                          @LawFirmAddress1,
+                          @LawFirmAddress2,
+                          @LawFirmCity,
+                          @LawFirmState,
+                          @LawFirmZip,
+                          @LawFirmPhone,
+                          @LawFirmFax,
+                          'Admin',
+                          Getdate() )
+
+            SET ansi_warnings ON
+            SET @PayerLocationID=Scope_identity()
+
+            INSERT INTO attorneys
+                        (firstname,
+                         lastname,
+                         createdby,
+                         datecreated)
+            VALUES      (@AttorneyFirstName,
+                         @AttorneyLastName,
+                         'Admin',
+                         Getdate() )
+
+            SET @AttyId=Scope_identity()
+
+            INSERT INTO notes
+                        (notetype,
+                         notesummary,
+                         createdby,
+                         datecreated)
+            VALUES      ('QuickNote',
+                         'Record added',
+                         'Admin',
+                         Getdate())
+
+            DECLARE @FirmNoteId INT
+
+            SET @FirmNoteId =Scope_identity()
+
+            INSERT INTO firm_note
+                        (firmid,
+                         noteid,
+                         datecreated)
+            VALUES      (@PayerLocationID,
+                         @FirmNoteId,
+                         Getdate())
+        END
+
+      SELECT TOP 1 @CPTID = code
+      FROM   cptcodes
+      WHERE  cptcodes.code = @CPTCode
+
+      IF ( @CPTID IS NULL )
+        BEGIN
+            --not found, save exceptrion and continue with next record
+            UPDATE radnetdata
+            SET    exceptioninfo = 'CPT not found. ' + @CPTCode,
+                   processstatus = 2
+            WHERE  id = @Id
+        END
+
+      SET @ReferralDate = Isnull(@ReferralDate, Getdate())
+
+      BEGIN try
+          --do not forget to set proper Division ID
+          -- and proper ref doc id is unknown cannot be used
+          SELECT TOP(1) @ExamId = id
+          FROM   accounts
+          WHERE  NAME = @ExamNumber + '_' + @PatientID
+
+          DECLARE @caseId INT
+
+          SET @caseId= (SELECT id
+                        FROM   cases
+                        WHERE  debtorid = @KHMPatientID
+                               AND firmid = @PayerLocationID
+                               AND dateofloss = @PatientDateofInjury)
+
+          IF ( @caseId IS NULL )
+            BEGIN
+                SET ansi_warnings OFF
+
+                INSERT INTO cases
+                            (debtorid,
+                             firmid,
+                             attorneyid,
+                             dateofloss,
+                             createdby,
+                             datecreated,
+							 CaseStatus)
+                VALUES      ( @KHMPatientID,
+                              @PayerLocationID,
+                              @AttyId,
+                              @PatientDateofInjury,
+                              'Admin',
+                              Getdate(),
+							  'Open' )
+
+                SET ansi_warnings ON
+                SET @caseId=Scope_identity()
+            END
+
+          IF( @ExamId IS NULL
+               OR @ptId IS NULL )
+            BEGIN
+                DECLARE @DivId INT,
+                        @Err   INT
+
+                SET @DivId=(SELECT id
+                            FROM   locations
+                            WHERE  tempid = '42'
+                                   AND entity = 'Rims')
+
+                DECLARE @VendorId INT
+
+                SET @VendorId = (SELECT billingfacilityid
+                                 FROM   facilities
+                                 WHERE  entity = 'Rims'
+                                        AND migsource = 'vendorlocation'
+                                        AND tempid = Cast(@VLID as varchar))
+
+                IF( @VendorId IS NULL )
+                  BEGIN
+                      SET @VendorId=(SELECT billingfacilityid
+                                     FROM   facilities
+                                     WHERE  id = Cast(@VLID as varchar))
+                  END
+
+                INSERT INTO accounts
+                            (locationid,
+                             caseid,
+                             facilityid,
+                             accountstatus,
+                             proceduretype,
+                             servicedate,
+                             quantity,
+                             originaldebt,
+                             balance,
+                             cptcodes,
+                             referringphysician,
+                             createdby,
+                             datecreated,
+                             removed,
+                             agreementtype,
+                             servicesperformed,
+							 providertxnid,
+							 OriginalDueDate)
+                VALUES      ( @DivId,
+                              @caseId,
+                              @VendorId,
+                              'open',
+                              @ProcedureType,
+                              @DateofService,
+                              1,
+                              @BillingTotal,
+                              @BillingTotal,
+                              @CPTID,
+                              'Unknown',
+                              'Admin',
+                              Getdate(),
+                              0,
+                              @AgreementType,
+                              @CPTDescription,
+							  @PatientID,
+							  GetDate())
+
+                SET @ExamId = (SELECT Scope_identity())
+
+                IF ( @ExamId IS NOT NULL )
+                  BEGIN
+                      INSERT INTO adjustments
+                                  (accountid,
+                                   adjustmenttype,
+                                   adjustmentdate,
+                                   amount,
+                                   [description],
+                                   balanceto,
+                                   createdby,
+                                   datecreated)
+                      VALUES      ( @ExamId,
+                                    'Initial',
+                                    Getdate(),
+                                    @BillingTotal,
+                                    'Initial',
+                                    @BillingTotal,
+                                    'Admin',
+                                    Getdate() )
+
+                      INSERT INTO accountshistory
+                                  (accountid,
+                                   classification,
+                                   originalfinclass)
+                      VALUES      ( @ExamId,
+                                    @Classification,
+                                    @FCID )
+
+                      DECLARE @note          VARCHAR(2000),
+                              @AccountNoteId INT
+
+                      SET @note='ExamDescription : ' + @CPTDescription
+                                + '. ExternalPatientID : ' + @PatientID
+                                + '. ExternalExamID : ' + @ExamNumber
+
+                      INSERT INTO notes
+                                  (notetype,
+                                   notesummary,
+                                   createdby,
+                                   datecreated)
+                      VALUES      ( 'QuickNote',
+                                    @note,
+                                    'Admin',
+                                    Getdate() )
+
+                      SET @AccountNoteId = (SELECT Scope_identity())
+
+                      INSERT INTO account_note
+                                  (accountid,
+                                   noteid,
+                                   datecreated)
+                      VALUES      ( @ExamId,
+                                    @AccountNoteId,
+                                    Getdate() )
+
+                      UPDATE accounts
+                      SET    NAME = @ExamNumber + '_' + @PatientID
+                      WHERE  id = @ExamId
+                  END
+            --BEGIN catch
+            --    SELECT @Err = @@ERROR
+            -- IF (@Err <> 0)
+            -- BEGIN
+            --  ROLLBACK TRANSACTION
+            --  RETURN @Err
+            -- END
+            --END catch
+            END
+
+          DECLARE @taskid INT
+          DECLARE @DocumentType NVARCHAR(510)
+
+          IF ( @AttachmentType = 709 )
+            SET @DocumentType='Patient Med Rpt'
+
+          IF ( @AttachmentType = 711 )
+            SET @DocumentType='A P.I. Lien'
+
+          IF ( @AttachmentType = 737 )
+            SET @DocumentType='A SuperBill'
+
+          INSERT INTO tasks
+                      (datecreated,
+                       summary,
+                       createdby)
+          VALUES      (Getdate(),
+                       @ImageFileName,
+                       'Admin')
+
+          SELECT @taskid = Scope_identity()
+
+          INSERT INTO taskdocuments
+                      (taskid,
+                       fullpath,
+                       documenttype,
+                       filename,
+                       notes,
+                       datecreated,
+                       createdby)
+          VALUES      ( @taskid,
+                        @AttachmentPath,
+                        @DocumentType,
+                        @ImageFileName,
+                        @AttachmentNote,
+                        Getdate(),
+                        'Admin')
+
+          INSERT INTO account_task
+                      (accountid,
+                       taskid)
+          VALUES      ( @ExamId,
+                        @taskid )
+
+          UPDATE radnetdata
+          SET    processstatus = 1,
+                 km_examnumber = @ExamId
+          WHERE  id = @Id
+      END try
+
+      BEGIN catch
+          UPDATE radnetdata
+          SET    exceptioninfo = Error_message(),
+                 processstatus = 2
+          WHERE  id = @Id
+      END catch
+
+      -----------------------
+      CONTI:
+
+      FETCH next FROM ee INTO @id, @LocationId, @Database, @VendorName,
+      @PatientID
+      , @PatientLastName, @PatientFirstName, @PatientDateofBirth,
+      @PatientAddress1
+      , @PatientAddress2, @PatientCity, @PatientState, @PatientZip,
+      @PatientPhone,
+      @PatientDateofInjury, @PatientGender, @LawFirmName, @LawFirmPhone,
+      @LawFirmAddress1, @LawFirmAddress2, @LawFirmCity, @LawFirmState,
+      @LawFirmZip
+      , @AttorneyFirstName, @AttorneyLastName, @ExamNumber, @Procedure, @CPTCode
+      ,
+      @CPTDescription, @DateofService, @ReferralDate, @ReferringDrFirstName,
+      @RefDrAddress1, @RefDrAddress2, @RefDrCity, @RefDrState, @RefDrZip,
+      @RefDrPhone, @RefDrFax, @Classification, @GrossCharge, @ICD10,
+      @AttachmentType, @AttachmentPath, @BillingTotal, @PILienType, @PILienSign,
+      @ExamOrder,@ImageFileName
+  END
+
+CLOSE ee
+
+DEALLOCATE ee 
